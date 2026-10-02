@@ -516,46 +516,6 @@
     "totalMs": 366,
     "loop": true
   },
-  "lookLeft": {
-    "file": "lookLeft.png",
-    "frames": 8,
-    "cols": 8,
-    "rows": 1,
-    "frameWidth": 256,
-    "frameHeight": 277,
-    "durationsMs": [
-      33,
-      33,
-      34,
-      33,
-      33,
-      34,
-      33,
-      33
-    ],
-    "totalMs": 266,
-    "loop": true
-  },
-  "lookRight": {
-    "file": "lookRight.png",
-    "frames": 8,
-    "cols": 8,
-    "rows": 1,
-    "frameWidth": 256,
-    "frameHeight": 277,
-    "durationsMs": [
-      33,
-      33,
-      34,
-      33,
-      33,
-      34,
-      33,
-      33
-    ],
-    "totalMs": 266,
-    "loop": true
-  },
   "idleEye": {
     "file": "idleEye.png",
     "frames": 75,

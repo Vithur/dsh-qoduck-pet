@@ -151,17 +151,24 @@ scripts/smoke-test.mjs     离线冒烟测试
 
 | 相位 | 动画 | 触发 |
 |---|---|---|
-| `idle` | `idle` → 停留 2 个周期后 `idleEye` | 状态机 |
+| `idle` | `idle` → 2 个周期后 `idleEye` → **闲置 10 分钟后 `waiting`（睡着）** | 状态机 |
 | `running` | `running` | `agent/status` running、`tools/execute` |
-| `waiting` | `waiting` | `approval/request`、`user-questions/request` |
+| `waiting` | **`review`** | `approval/request`、`ask_user_question` 等需要你操作 |
 | `review` | `review` | `turn/end` reason `completed` |
 | `failed` | `failed` | `agent/error`、`turn/end` reason `error` |
 | `interrupted` | `failed`（别名） | `turn/end` reason `aborted`+`user` 或 `interrupted` |
-| — | `waving` / `jumping` | 开窗 / 待机随机招手 / 双击 / 悬停 |
+| — | `waving` / `jumping` | 开窗问候 / 双击 / 悬停 |
 | — | `runningLeft` / `runningRight` | 拖拽方向 |
 | — | `look-000` … `look-337_5`（16 帧） | 指针在注视范围内移动 |
 
-12 个动画素材均保留；`lookLeft` / `lookRight` 不再接入任何待机调度，避免循环转头造成抽搐。
+**关于 `waiting` 素材**：Qoduck 的 `waiting` 动画画的是闭眼睡觉 + ZZZ，语义是「长时间没事干」，
+不是「等你操作」。所以：
+
+- 需要你选择（卡片蓝色问号）时播 **`review`**（凑过来看着你）；
+- `waiting` 只在 **idle 连续 10 分钟**后播放，且睡着后不再切回 `idle`/`idleEye`，
+  直到相位离开 idle 或有鼠标交互（那会把闲置计时清零）。
+
+`lookLeft` / `lookRight` 素材已删除：Qoder 原版就没接线，留着只会被误接成循环转头造成抽搐。
 
 ## 配置
 

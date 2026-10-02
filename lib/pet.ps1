@@ -861,10 +861,27 @@ $script:DebugTick = 0
 # idle 停留时长；够久就换眨眼变体
 $script:IdleMs = 0.0
 $script:IdleEyeAfterMs = 2.0 * [double](Get-Animation 'idle').totalMs
+# 闲置多久之后「睡着」：10 分钟。waiting 素材本来画的就是闭眼睡觉 + ZZZ，
+# 用它表示长时间没事干才对（放在「等你选择」上语义是反的，见 Resolve-Animation）。
+# 睡着后只有鼠标交互（悬停/拖拽/移动）才会醒，并清零重新计时。
+$script:IdleSleepAfterMs = 10.0 * 60.0 * 1000.0
+# 是否睡着。睡着时卡片淡出，鼠标一动就醒并重新计时。
+$script:Sleeping = $false
+# 卡片因睡眠而淡出的目标透明度；实际值逐帧趋近，做出淡入淡出。
+$script:CardFadeTarget = 1.0
+$script:CardFade = 1.0
+$script:CardFadeSpeed = 3.2   # 每秒变化量，约 0.3s 走完全程
 # 注视触发范围：宠物中心 ±这个值（DIP）。Qoder 的 pointerLookTrackingSize=400 取半宽。
 # 按「到宠物中心的直线距离」判定（圆形），不是 x/y 分别比较的方框——方框在
 # 对角会把 sqrt(2) 倍远的位置也算进范围，比预期大一圈。
 $script:LookTrackHalf = 200.0
+# 注视的**下限**：太贴近宠物时不注视，那块归悬停跳跃管。
+# 对齐 Qoder 原版：max(lookTrackingMinDistance=40, min(宽,高)*lookTrackingDistanceRatio=0.38)。
+# 随宠物尺寸变化，所以在 Apply-Config 里重算，不能写死。
+$script:LookTrackMinRatio = 0.38
+$script:LookTrackMinFloor = 40.0
+$script:LookTrackMin = [Math]::Max($script:LookTrackMinFloor,
+    [Math]::Min([double]$script:WinW, [double]$script:WinH) * $script:LookTrackMinRatio)
 # 指针是否落在宠物自身范围内（由 Update-Look 每帧刷新）
 $script:Hovering = $false
 # 注视回落：只有指针真的移动过才刷新注视方向。静止不动地停在宠物旁边，
@@ -1046,13 +1063,52 @@ function Send-CardAction([string]$Action, [string]$Text) {
     Write-PetAction $payload
 }
 
+<#
+ 睡眠态的进出。
+
+ 睡着判定是「idle 相位连续闲置超过 IdleSleepAfterMs」，但**不能只用 IdleMs 归零
+ 来唤醒**：睡着时 Phase 依然是 idle，IdleMs 会继续累加，于是永远醒不过来。
+ 所以唤醒是一个显式动作——鼠标悬停、拖拽、或指针在注视范围内移动都算「有人在
+ 摸它」，立刻醒来并把闲置计时清零重新开始。
+
+ 睡着期间卡片淡出；醒来时淡入。
+#>
+function Update-Sleep([double]$dt) {
+    $awake = $script:Hovering -or $null -ne $script:DragDir -or $script:LookIndex -ge 0
+    if ($awake) {
+        if ($script:Sleeping) { $script:Sleeping = $false }
+        $script:IdleMs = 0.0
+        return
+    }
+    if ($script:Phase -ne 'idle') {
+        # 有任务时谈不上睡觉；清掉睡眠态免得和相位动画打架
+        $script:Sleeping = $false
+        return
+    }
+    if ($script:IdleMs -ge $script:IdleSleepAfterMs) { $script:Sleeping = $true }
+}
+
 function Resolve-Animation {
     if ($script:OneShot) { return $script:OneShot }
     if ($script:DragDir) { return $script:DragDir }
-    # idle 待够两个动画周期后换成眨眼变体；一离开 idle 立刻切回（Qoder 原版行为：
-    # idleMotionCycleDurationMs * idleMotionIntroLoopCount 后换 idle-eye）。
-    if ($script:Phase -eq 'idle' -and $script:IdleMs -ge $script:IdleEyeAfterMs) { return 'idleEye' }
-    return $script:Phase
+    $phase = $script:Phase
+
+    # 「等你选择」播 review（凑过来看着你），不播 waiting——
+    # Qoduck 的 waiting 素材画的是闭眼睡觉 + ZZZ，放在「等你操作」上语义完全相反。
+    if ($phase -eq 'waiting') { return 'review' }
+
+    # idle 的两档：先待机呼吸，够久换眨眼变体，再久就真的睡着了（waiting 素材）。
+    # 睡着之后一直保持，不再被 idle/idleEye 或注视打断——它就是「长时间没事干」的终态，
+    # 有别的事发生（相位离开 idle、鼠标动起来）自然会把 IdleMs 清零退出去。
+    if ($phase -eq 'idle') {
+        # 睡着是「长时间没事干」的终态：醒着的判定交给 Update-Sleep，
+        # 这里只在确实睡着时返回睡觉动画，之后一直保持到被唤醒。
+        if ($script:Sleeping) { return 'waiting' }
+        # idle 待够两个动画周期后换成眨眼变体；一离开 idle 立刻切回
+        # （Qoder 原版行为：idleMotionCycleDurationMs * idleMotionIntroLoopCount）。
+        if ($script:IdleMs -ge $script:IdleEyeAfterMs) { return 'idleEye' }
+    }
+    return $phase
 }
 
 function Apply-Config($state) {
@@ -1065,6 +1121,9 @@ function Apply-Config($state) {
             $script:SizePx = [Math]::Max(48, [Math]::Min(384, $next))
             $script:WinW = [int][Math]::Round($script:SizePx)
             $script:WinH = [int][Math]::Round($script:SizePx * $aspect)
+            # 尺寸变了，注视下限跟着重算（见 $script:LookTrackMin 的注释）
+            $script:LookTrackMin = [Math]::Max($script:LookTrackMinFloor,
+                [Math]::Min([double]$script:WinW, [double]$script:WinH) * $script:LookTrackMinRatio)
             $changed = $true
         }
     }
@@ -1240,10 +1299,12 @@ function Update-Look {
 
     # 圆形判定：到宠物中心的直线距离。原来分别比较 Abs(dx)/Abs(dy) 是方框，
     # 对角位置实际距离 sqrt(2)*200≈283 DIP 仍算命中，范围比「半径 200」大一圈。
-    if ([Math]::Sqrt($dx * $dx + $dy * $dy) -gt $script:LookTrackHalf) {
-        $script:LookIndex = -1
-        return
-    }
+    $dist = [Math]::Sqrt($dx * $dx + $dy * $dy)
+    if ($dist -gt $script:LookTrackHalf) { $script:LookIndex = -1; return }
+
+    # 下限门槛（对齐 Qoder 原版 lookTrackingMinDistance / lookTrackingDistanceRatio）：
+    # 太贴近宠物时不注视——那块区域已经由上面的悬停分支负责跳了。
+    if ($dist -lt $script:LookTrackMin) { $script:LookIndex = -1; return }
 
     # 已经静止超时：方向不再刷新，宠物继续待机。
     if ($lookExpired) { return }
@@ -1398,11 +1459,29 @@ $timer.Add_Tick({
 
     if ($script:OneShot -and $now -ge $script:OneShotUntil) { $script:OneShot = $null }
 
+    # 每帧刷新注视方向与悬停态。必须调用——LookIndex / Hovering 全靠它更新，
+    # 少了这一行注视与悬停跳跃都不会触发。
+    Update-Look
 
     # 悬停在宠物上 → 反复播放跳跃：一次跳完（OneShot 被清空）立刻再来一次。
     if ($script:Hovering -and -not $script:DragDir) {
         if ($script:OneShot -ne 'jumping') { Start-OneShot 'jumping' }
     }
+
+    # 睡眠时卡片淡出、醒来淡入。透明度逐帧趋近目标值；卡片始终占位，
+    # 只用 Opacity 而不切 Visibility，免得窗口尺寸跟着跳。
+    $script:CardFadeTarget = if ($script:Sleeping) { 0.0 } else { 1.0 }
+    $step = $script:CardFadeSpeed * ($dt / 1000.0)
+    if ($script:CardFade -lt $script:CardFadeTarget) {
+        $script:CardFade = [Math]::Min($script:CardFadeTarget, $script:CardFade + $step)
+    } elseif ($script:CardFade -gt $script:CardFadeTarget) {
+        $script:CardFade = [Math]::Max($script:CardFadeTarget, $script:CardFade - $step)
+    }
+    if ($card) { $card.Opacity = $script:CardFade }
+
+    # 睡眠态：由下面 Update-Sleep 统一维护，这里只管计时。
+    # 睡着时鼠标一有动静（悬停/拖拽/移动）就醒，并清零重新计时。
+    Update-Sleep $dt
 
     # idle 连续计时：够久就让 Resolve-Animation 换眨眼变体；离开 idle 立刻清零。
     if ($script:Phase -eq 'idle') { $script:IdleMs += $dt } else { $script:IdleMs = 0.0 }

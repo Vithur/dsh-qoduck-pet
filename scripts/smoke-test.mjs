@@ -722,6 +722,20 @@ console.log('\npet.ps1')
 
 const petScript = join(ROOT, 'lib', 'pet.ps1')
 
+// 坑：C# 的 Add-Type 用 here-string @"..." 包着，PowerShell 5.1 要求 here-string
+// 结束符 "`r`n 行首的 @" 才可靠识别。文件一旦被改成 LF-only，解析器就不认这个
+// here-string，于是里面的 `using System;` 被当成脚本语句，报
+// MissingUsingStatementDirective —— 整只宠物起不来。
+test('pet.ps1 必须是 UTF-8 BOM + CRLF 行尾', () => {
+  const bytes = readFileSync(petScript)
+  assert.ok(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf, 'pet.ps1 缺少 UTF-8 BOM')
+  const text = bytes.toString('utf8')
+  const crlf = (text.match(/\r\n/g) ?? []).length
+  const bareLf = (text.match(/(?<!\r)\n/g) ?? []).length
+  assert.equal(bareLf, 0, `存在 ${bareLf} 个裸 LF 行尾（应为 CRLF），会让 Add-Type 的 here-string 解析失败`)
+  assert.ok(crlf > 100, 'CRLF 行尾数量异常：' + crlf)
+})
+
 test('存在且带 UTF-8 BOM（无 BOM 时 PowerShell 5.1 会把中文注释读成乱码并解析失败）', () => {
   assert.ok(existsSync(petScript), 'pet.ps1 不存在')
   const head = readFileSync(petScript).subarray(0, 3)
@@ -959,6 +973,56 @@ test('待机随机张望已彻底移除，禁止重新接回抽搐动画', () =>
   )
 })
 
+// lookLeft / lookRight 素材已删除（Qoder 原版也没接线，留着只会被误接成抽搐动画）。
+test('转头动画素材已彻底移除', () => {
+  const framesManifest = JSON.parse(readFileSync(join(ROOT, 'frames', 'manifest.json'), 'utf8'))
+  assert.ok(!('lookLeft' in framesManifest), 'manifest 不应再有 lookLeft')
+  assert.ok(!('lookRight' in framesManifest), 'manifest 不应再有 lookRight')
+  for (const file of ['lookLeft.png', 'lookRight.png']) {
+    assert.ok(!existsSync(join(ROOT, 'frames', file)), '素材应已删除: ' + file)
+  }
+  // 16 向静态注视帧必须还在，鼠标注视靠它
+  assert.ok(
+    Array.isArray(framesManifest._lookFrames) && framesManifest._lookFrames.length === 16,
+    '16 向注视帧必须保留',
+  )
+})
+
+// waiting 素材画的是闭眼睡觉 + ZZZ，语义是「长时间闲置」而不是「等你选择」。
+// 蓝色等待态必须播 review。
+test('等待选择播 review，waiting 只用于长时间闲置', () => {
+  const text = readFileSync(petScript, 'utf8')
+  const resolveStart = text.indexOf('function Resolve-Animation')
+  const resolveBlock = text.slice(resolveStart, text.indexOf('\nfunction ', resolveStart + 10))
+  assert.ok(resolveStart >= 0, '找不到 Resolve-Animation')
+  assert.ok(
+    /\$phase\s*-eq\s*'waiting'\s*\)\s*\{\s*return\s*'review'\s*\}/.test(resolveBlock),
+    'waiting 相位必须改为播 review',
+  )
+  // 睡着是一显式状态（$script:Sleeping），不能只用 IdleMs 判定：
+  // 睡着时 Phase 仍是 idle、IdleMs 继续累加，靠它判就永远醒不过来。
+  assert.ok(text.includes('Sleeping'), '缺少显式睡眠状态 $script:Sleeping')
+  assert.ok(/function Update-Sleep/.test(text), '缺少睡眠态维护函数 Update-Sleep')
+  assert.ok(
+    /if \(\$script:Sleeping\) \{ return 'waiting' \}/.test(resolveBlock),
+    'Resolve-Animation 应在睡着时返回 waiting',
+  )
+  // 唤醒：鼠标一动就醒，并清零重新计时
+  const sleepStart = text.indexOf('function Update-Sleep')
+  const sleepBlock = text.slice(sleepStart, text.indexOf('\nfunction ', sleepStart + 10))
+  assert.ok(/\$script:IdleMs = 0\.0/.test(sleepBlock), '唤醒时必须清零闲置计时')
+  assert.ok(/\$awake[\s\S]{0,200}Hovering/.test(sleepBlock), '悬停应算唤醒')
+  assert.ok(/\$awake[\s\S]{0,200}DragDir/.test(sleepBlock), '拖拽应算唤醒')
+  assert.ok(/\$awake[\s\S]{0,200}LookIndex/.test(sleepBlock), '注视范围内移动应算唤醒')
+  assert.ok(text.includes('IdleSleepAfterMs'), '缺少闲置入睡阈值 IdleSleepAfterMs')
+  assert.ok(
+    /\$script:IdleSleepAfterMs\s*=\s*10\.0\s*\*\s*60\.0\s*\*\s*1000\.0/.test(text),
+    '闲置入睡阈值应为 10 分钟',
+  )
+  // 睡着时卡片淡出、醒来淡入
+  assert.ok(/CardFadeTarget[\s\S]{0,80}Sleeping/.test(text), '睡眠应驱动卡片淡出')
+})
+
 test('注视：记录光标移动时间，静止后清除注视帧', () => {
   const text = readFileSync(petScript, 'utf8')
   const start = text.indexOf('function Update-Look')
@@ -1027,8 +1091,7 @@ test('相位与交互动画均已接线，鼠标注视走静态帧', () => {
   const names = Object.keys(framesManifest).filter((key) => !key.startsWith('_'))
 
   // 需要在脚本里以字面量出现的：交互态、idle 变体、别名目标。
-  // 五个相位名（idle/running/waiting/review/failed）由 state.json 直接给出并当动画名用；
-  // lookLeft/lookRight 素材仍保留，但不再接入待机调度，鼠标注视只走 16 向静态帧。
+  // 五个相位名（idle/running/waiting/review/failed）由 state.json 直接给出并当动画名用。
   const literals = ['idle', 'idleEye', 'failed', 'waving', 'jumping', 'runningLeft', 'runningRight']
   for (const name of literals) {
     assert.ok(text.includes(`'${name}'`), '动画 ' + name + ' 未在脚本中以字面量引用')
@@ -1041,7 +1104,8 @@ test('相位与交互动画均已接线，鼠标注视走静态帧', () => {
     const target = phase === 'interrupted' ? 'failed' : phase
     assert.ok(names.includes(target), '相位 ' + phase + ' 没有对应动画 ' + target)
   }
-  assert.equal(names.length, 12, '动画表应保留完整 12 项素材')
+  // lookLeft / lookRight 已删除（原版未接线），剩 10 项
+  assert.equal(names.length, 10, '动画表应保留完整 10 项素材：' + names.join(','))
 })
 
 test('单元格尺寸由解码后的表整除得出（回归：分别 round 会让最后一行越界）', () => {
@@ -1089,8 +1153,8 @@ const framesDir = join(ROOT, 'frames')
 const manifest = JSON.parse(readFileSync(join(framesDir, 'manifest.json'), 'utf8'))
 const animationNames = Object.keys(manifest).filter((key) => !key.startsWith('_'))
 
-test('manifest 覆盖全部 12 个动画', () => {
-  assert.equal(animationNames.length, 12, '实际 ' + animationNames.length + '：' + animationNames.join(','))
+test('manifest 覆盖全部 10 个动画', () => {
+  assert.equal(animationNames.length, 10, '实际 ' + animationNames.length + '：' + animationNames.join(','))
   for (const required of ['idle', 'running', 'waiting', 'review', 'failed', 'waving', 'jumping']) {
     assert.ok(animationNames.includes(required), '缺少动画 ' + required)
   }
