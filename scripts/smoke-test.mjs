@@ -807,11 +807,48 @@ test('卡片两行的图标落在图标列并居中对齐', () => {
   assert.ok(/<Path x:Name="DetailIcon"(?:\s|>)/.test(iconGrid), '图标容器缺少描边层 DetailIcon')
   assert.ok(/<Path x:Name="DetailIconFill"(?:\s|>)/.test(iconGrid), '图标容器缺少填充层 DetailIconFill')
 
-  // 两行文字同在第 1 列、同左边距 → 左对齐；放不下用省略号
-  assert.ok(/x:Name="TitleText" Grid\.Row="0" Grid\.Column="1" Margin="9,/.test(cardBlock), '标题在第 1 列')
+  // 两行文字同在第 1 列、同左边距 → 左对齐；放不下用省略号。
+  // 标题行现在多包了一层 Grid：外层占第 1 列，内层再分「标题（可截断）」与
+  // 「+N 徽标（固定占位）」两列，所以标题自己不再直接带 Grid.Column。
+  const titleRow = cardBlock.match(
+    /<Grid\b[^>]*Grid\.Row="0"[^>]*Grid\.Column="1"[^>]*>[\s\S]*?<\/Grid>/,
+  )?.[0]
+  assert.ok(titleRow, '标题行容器应在第 1 列')
+  assert.ok(/<TextBlock x:Name="TitleText"/.test(titleRow), '标题行缺少 TitleText')
+  assert.ok(/<Border x:Name="ChildBadge"/.test(titleRow), '标题行缺少 +N 徽标 ChildBadge')
+  assert.ok(/<TextBlock x:Name="ChildBadgeText"/.test(titleRow), '标题行缺少徽标文本 ChildBadgeText')
   assert.ok(/x:Name="DetailText" Grid\.Row="1" Grid\.Column="1" Margin="9,/.test(cardBlock), '明细在第 1 列且同左边距')
   assert.ok(/x:Name="TitleText"[^>]*TextTrimming="CharacterEllipsis"/s.test(cardBlock), '标题应省略号截断')
   assert.ok(/x:Name="DetailText"[^>]*TextTrimming="CharacterEllipsis"/s.test(cardBlock), '明细应省略号截断')
+})
+
+// 用户报的「长标题把 +N 挤没了」：标题与数量必须分开渲染，
+// 标题可截断、数量固定占位，数量绝不能拼进标题串里跟着被省略。
+test('+N 徽标与标题分离，长标题不会吃掉数量', () => {
+  const text = readFileSync(petScript, 'utf8')
+  const from = text.indexOf('$CardXaml = @')
+  const cardBlock = text.slice(from, text.indexOf("'@", from))
+  // 徽标所在列是 Auto（固定占位），标题列是 *（可伸缩截断）
+  const titleRow = cardBlock.match(/<Grid\b[^>]*Grid\.Row="0"[^>]*Grid\.Column="1"[^>]*>[\s\S]*?<\/Grid>/)?.[0]
+  assert.ok(titleRow, '找不到标题行容器')
+  const cols = [...(titleRow.match(/<ColumnDefinition Width="([^"]+)"/g) ?? [])]
+  assert.equal(cols.length, 2, '标题行应为两列（标题 + 徽标）')
+  assert.ok(cols[0].includes('"*"'), '标题列应为可伸缩的 *')
+  assert.ok(cols[1].includes('Auto'), '徽标列应为固定占位的 Auto')
+
+  // 窗口侧用 childCount 驱动徽标，而不是拼标题
+  assert.ok(/item\.childCount/.test(text), '窗口侧应读取 item.childCount')
+  assert.ok(/cardChildBadgeText\.Text = "\+\$childCount"/.test(text), '徽标文案应为 +N')
+  // 防御性剥离旧宿主拼在标题尾巴上的 +N，避免与新徽标重复
+  assert.ok(/\$title = \$title -replace/.test(text), '应剥离标题尾部可能残留的 +N')
+
+  // 宿主侧标题必须保持纯净：不能再拼 +N
+  const activity = readFileSync(join(ROOT, 'lib', 'activity.js'), 'utf8')
+  assert.ok(
+    !/title = `\$\{title\} \+\$\{childCount\}`/.test(activity),
+    '宿主不应再把 +N 拼进标题串',
+  )
+  assert.ok(/childCount,/.test(activity), '宿主应继续输出 childCount 字段')
 })
 
 test('文字动效已移除（会与滚动/光标冲突，先不做）', () => {

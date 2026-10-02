@@ -409,9 +409,22 @@ $CardXaml = @'
            文字在各自的列里左对齐，放不下就省略号。 -->
       <Ellipse x:Name="StatusDot" Grid.Row="0" Grid.Column="0" Width="8" Height="8"
                Fill="#4C8DFF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-      <TextBlock x:Name="TitleText" Grid.Row="0" Grid.Column="1" Margin="9,0,10,0" FontSize="13"
-                 Foreground="#F2F2F2" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
-                 VerticalAlignment="Center"/>
+      <!-- 标题与「+N」分成两列：标题自己截断，徽标固定占位、不参与截断。
+           拼成一串的话，长标题会把 +N 一起省略掉（见 Update-Card）。 -->
+      <Grid Grid.Row="0" Grid.Column="1" Margin="9,0,10,0" VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="TitleText" Grid.Column="0" FontSize="13"
+                   Foreground="#F2F2F2" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                   VerticalAlignment="Center"/>
+        <Border x:Name="ChildBadge" Grid.Column="1" Margin="6,0,0,0" Padding="6,1"
+                CornerRadius="7" Background="#26FFFFFF" Visibility="Collapsed"
+                VerticalAlignment="Center">
+          <TextBlock x:Name="ChildBadgeText" FontSize="11" Foreground="#E8E8E8"/>
+        </Border>
+      </Grid>
 
       <!-- 原生图标是 16x16 viewBox，Stretch="None" 下给 16x16 才不会被裁掉边缘。
            拆两个 Path：DetailIcon 画纯描边的开放折线，DetailIconFill 画既填充又描边的闭合块
@@ -489,6 +502,8 @@ $card = [System.Windows.Markup.XamlReader]::Parse($CardXaml)
 $card.Visibility = 'Collapsed'
 $card.Width = $script:CardWidth
 $cardTitle = $card.FindName('TitleText')
+$cardChildBadge = $card.FindName('ChildBadge')
+$cardChildBadgeText = $card.FindName('ChildBadgeText')
 $cardDetail = $card.FindName('DetailText')
 $cardDot = $card.FindName('StatusDot')
 $cardStop = $card.FindName('StopButton')
@@ -794,6 +809,10 @@ function Apply-Theme {
     if ($cardToggleGlyph) { $cardToggleGlyph.Stroke = Resolve-Brush $p.btnFg }
     if ($cardSendGlyph) { $cardSendGlyph.Stroke = Resolve-Brush $p.btnFg }
     if ($cardDetailIcon) { $cardDetailIcon.Stroke = Resolve-Brush $p.detail }
+    if ($cardChildBadge) {
+        $cardChildBadge.Background = Resolve-Brush $p.btnBg
+        $cardChildBadgeText.Foreground = Resolve-Brush $p.detail
+    }
     # 填充组要用同一个颜色：既填实心块、也描轮廓，否则两组会出双色。
     if ($cardDetailIconFill) {
         $cardDetailIconFill.Stroke = Resolve-Brush $p.detail
@@ -999,10 +1018,21 @@ function Update-Card($activity) {
 
     $script:CardSessionId = [string]$item.sessionId
 
-    # 第一行：会话标题（多会话时缀一个 +N）
+    # 第一行：会话标题。标题自己截断，「+N」是独立徽标固定占位——不再拼进标题串，
+    # 否则长标题会把数量一起省略掉（用户报的「+N 被挤没了」）。
     $title = [string]$item.title
-    if ($items.Count -gt 1) { $title = "$title  +$($items.Count - 1)" }
+    # 兼容仍把「 +N」拼在标题尾巴上的旧宿主：剥掉，数量改由徽标显示，不会重复。
+    $title = $title -replace '\s*\+\d+$', ''
     $cardTitle.Text = $title
+
+    $childCount = 0
+    if ($null -ne $item.childCount) { $childCount = [int]$item.childCount }
+    if ($childCount -gt 0) {
+        $cardChildBadgeText.Text = "+$childCount"
+        $cardChildBadge.Visibility = 'Visible'
+    } else {
+        $cardChildBadge.Visibility = 'Collapsed'
+    }
 
     # 第二行：实时信息——宿主给的是「正在干什么」（「运行 pnpm test」「读取 lib/pet.ps1」），
     # 拿不到才退回状态词，至少不空着。
