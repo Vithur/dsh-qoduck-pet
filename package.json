@@ -1,0 +1,50 @@
+{
+  "name": "dsh-qoduck-pet",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Qoduck 桌面宠物 for DeepSeek Harness：独立于浏览器的透明置顶窗口，姿态随 Agent 状态切换，可拖拽、可注视鼠标。",
+  "type": "module",
+  "icon": "./icon.png",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "frames",
+    "locale",
+    "icon.png",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "pet",
+    "desktop-pet",
+    "qoduck"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [],
+      "immediately": true
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
+}

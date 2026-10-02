@@ -1,0 +1,7 @@
+# dsh-qoduck-pet bundle patch.
+# 一行同时挂起两个半部：宿主半部（/qoduck-pet/assets/* 素材路由 +
+# /api/qoduck-pet/* 配置读写）与浏览器半部（shell.overlay 里的桌宠，
+# 以及 settings.section 里的「桌宠」设置页）。
+- insert:
+    - id: qoduck-pet
+      name: dsh-qoduck-pet

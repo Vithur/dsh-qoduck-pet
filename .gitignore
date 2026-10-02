@@ -1,0 +1,14 @@
+# Python 字节码
+__pycache__/
+*.pyc
+
+# 运行态 / 临时
+*.log
+*.tmp
+outputs/
+
+# 编辑器和系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
