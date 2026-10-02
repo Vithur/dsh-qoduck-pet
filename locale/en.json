@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Qoduck Pet",
-    "description": "Qoder's Qoduck as a desk pet: poses follow the agent state, eyes track the pointer, draggable, position and settings persisted."
+    "title": "Qoduck",
+    "description": "A recreation of Qoder's Qoduck desk pet"
   }
 }

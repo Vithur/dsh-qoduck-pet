@@ -1,6 +1,6 @@
-# dsh-qoduck-pet
+# Qoduck
 
-把 [Qoder](https://qoder.com) 的 **Qoduck** 做成 DeepSeek Harness 的**桌面宠物**。
+Qoder 的 Qoduck 桌宠复刻。
 
 不是网页里的浮层——是一个独立于浏览器的桌面窗口：透明、无边框、置顶、不占任务栏。
 关掉网页它还在，可以拖到桌面任何位置。姿态随 Agent 状态切换，指针靠近时会转头看你。

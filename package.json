@@ -2,7 +2,7 @@
   "name": "dsh-qoduck-pet",
   "version": "0.2.0",
   "private": true,
-  "description": "Qoduck 桌面宠物 for DeepSeek Harness：独立于浏览器的透明置顶窗口，姿态随 Agent 状态切换，可拖拽、可注视鼠标。",
+  "description": "Qoder 的 Qoduck 桌宠复刻",
   "type": "module",
   "icon": "./icon.png",
   "exports": {

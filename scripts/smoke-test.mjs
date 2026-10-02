@@ -1238,11 +1238,41 @@ test('样式只用主题 token，不用字面色值', () => {
   assert.deepEqual(literalColors, [], '样式中出现字面色值：' + literalColors.join(', '))
 })
 
+test('设置页精简：停靠角 / 重置 / 状态目录 / 鼠标注视已移除', () => {
+  const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
+  for (const key of ['settings.pin', 'settings.pinHint', 'settings.reset',
+    'settings.resetButton', 'settings.path', 'settings.tracking', 'settings.trackingHint',
+    'pin.bottom-right', 'pin.bottom-left', 'pin.top-right', 'pin.top-left']) {
+    assert.ok(!source.includes(`"${key}"`), '设置页字典不应再有 ' + key)
+  }
+  assert.ok(!source.includes('PINS'), 'PINS 常量应已移除')
+  assert.ok(!/mouseTracking: value/.test(source), '不应再有鼠标注视开关')
+})
+
+test('标题与描述全插件统一', () => {
+  const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
+  assert.ok(source.includes('"settings.title": "Qoduck"'), '标题应为 Qoduck')
+  assert.ok(source.includes('"settings.intro": "Qoder 的 Qoduck 桌宠复刻"'), '中文描述应统一')
+  const zh = JSON.parse(readFileSync(join(ROOT, 'locale', 'zh.json'), 'utf8'))
+  const en = JSON.parse(readFileSync(join(ROOT, 'locale', 'en.json'), 'utf8'))
+  assert.equal(zh.meta.title, 'Qoduck', 'locale zh 标题应为 Qoduck')
+  assert.equal(zh.meta.description, 'Qoder 的 Qoduck 桌宠复刻', 'locale zh 描述应统一')
+  assert.equal(en.meta.title, 'Qoduck', 'locale en 标题应为 Qoduck')
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(pkg.description, 'Qoder 的 Qoduck 桌宠复刻', 'package.json 描述应统一')
+})
+
 test('locale 字典 zh / en 键集一致且非空', () => {
   const zh = Object.keys(t.DICT_ZH).sort()
   const en = Object.keys(t.DICT_EN).sort()
   assert.deepEqual(zh, en, 'zh 与 en 键集不一致')
-  assert.ok(zh.length > 20, '字典条目过少：' + zh.length)
+  // 设置页精简后键变少了（去掉了停靠角 / 重置位置 / 状态目录 / 鼠标注视）。
+  // 这里只兜住「别把字典误删空」，具体键名由下面的相位与分组断言保证。
+  assert.ok(zh.length >= 15, '字典条目过少：' + zh.length)
+  for (const key of ['settings.title', 'settings.intro', 'settings.group.appearance', 'settings.group.runtime', 'settings.size']) {
+    assert.ok(t.DICT_ZH[key], 'zh 缺少必要键 ' + key)
+    assert.ok(t.DICT_EN[key], 'en 缺少必要键 ' + key)
+  }
   for (const key of zh) {
     assert.ok(t.DICT_ZH[key].length > 0, 'zh 缺值 ' + key)
     assert.ok(t.DICT_EN[key].length > 0, 'en 缺值 ' + key)
