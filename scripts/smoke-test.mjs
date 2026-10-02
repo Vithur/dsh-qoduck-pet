@@ -722,20 +722,11 @@ console.log('\npet.ps1')
 
 const petScript = join(ROOT, 'lib', 'pet.ps1')
 
-// 坑：C# 的 Add-Type 用 here-string @"..." 包着，PowerShell 5.1 要求 here-string
-// 结束符 "`r`n 行首的 @" 才可靠识别。文件一旦被改成 LF-only，解析器就不认这个
-// here-string，于是里面的 `using System;` 被当成脚本语句，报
-// MissingUsingStatementDirective —— 整只宠物起不来。
-test('pet.ps1 必须是 UTF-8 BOM + CRLF 行尾', () => {
-  const bytes = readFileSync(petScript)
-  assert.ok(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf, 'pet.ps1 缺少 UTF-8 BOM')
-  const text = bytes.toString('utf8')
-  const crlf = (text.match(/\r\n/g) ?? []).length
-  const bareLf = (text.match(/(?<!\r)\n/g) ?? []).length
-  assert.equal(bareLf, 0, `存在 ${bareLf} 个裸 LF 行尾（应为 CRLF），会让 Add-Type 的 here-string 解析失败`)
-  assert.ok(crlf > 100, 'CRLF 行尾数量异常：' + crlf)
-})
-
+// 实测结论：真正必须的是 **UTF-8 BOM**。
+// 没有 BOM 时 PS 5.1 按 ANSI 解码中文注释，字节错位后连行开头的 `using` 都会被
+// 当成语句解析，报 MissingUsingStatementDirective —— 整只宠物起不来。
+// 行尾则无所谓：从 GitHub 装的包解出来是 LF，实测照常运行，所以这里不强制 CRLF
+// （强制了反而会让工作区与安装包互相打架）。
 test('存在且带 UTF-8 BOM（无 BOM 时 PowerShell 5.1 会把中文注释读成乱码并解析失败）', () => {
   assert.ok(existsSync(petScript), 'pet.ps1 不存在')
   const head = readFileSync(petScript).subarray(0, 3)
