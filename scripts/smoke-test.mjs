@@ -1262,6 +1262,20 @@ test('标题与描述全插件统一', () => {
   assert.equal(pkg.description, 'Qoder 的 Qoduck 桌宠复刻', 'package.json 描述应统一')
 })
 
+test('设置页标题字号对齐 DSH 原生', () => {
+  const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
+  const title = source.match(/\.qoduck-head-title\{[^}]*\}/)
+  assert.ok(title, '找不到 .qoduck-head-title 样式')
+  // 原生设置页内容区标题是 16px / 500 / 行高 24px（见 ui-settings-general 的 title 类）
+  assert.ok(/font-size:16px/.test(title[0]), '标题应为 16px（原生一致），实际：' + title[0])
+  assert.ok(/font-weight:500/.test(title[0]), '标题字重应为 500（原生一致）')
+  assert.ok(/line-height:24px/.test(title[0]), '标题行高应为 24px（原生一致）')
+  const desc = source.match(/\.qoduck-head-desc\{[^}]*\}/)
+  assert.ok(desc, '找不到 .qoduck-head-desc 样式')
+  // 原生 description 是 14px / 行高 24px
+  assert.ok(/font-size:14px/.test(desc[0]), '描述应为 14px（原生一致），实际：' + desc[0])
+})
+
 test('locale 字典 zh / en 键集一致且非空', () => {
   const zh = Object.keys(t.DICT_ZH).sort()
   const en = Object.keys(t.DICT_EN).sort()
