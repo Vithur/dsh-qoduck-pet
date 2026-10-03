@@ -1262,7 +1262,10 @@ test('样式只用主题 token，不用字面色值', () => {
   const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
   const cssBlock = source.slice(source.indexOf('const CSS = ['), source.indexOf('].join("")'))
   assert.ok(cssBlock.includes('var(--dsw-alias-'), '样式应使用主题 token')
-  const literalColors = cssBlock.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g) || []
+  // `var(--token, #fff)` 里的 fallback 是兜底而不是主色，先剥掉再检测，
+  // 否则这条断言会把所有防御性 fallback 都判成字面色值。
+  const withoutFallbacks = cssBlock.replace(/var\([^()]*,[^()]*\)/g, 'var(--stripped)')
+  const literalColors = withoutFallbacks.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g) || []
   assert.deepEqual(literalColors, [], '样式中出现字面色值：' + literalColors.join(', '))
 })
 
@@ -1280,28 +1283,37 @@ test('设置页精简：停靠角 / 重置 / 状态目录 / 鼠标注视已移�
 test('标题与描述全插件统一', () => {
   const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
   assert.ok(source.includes('"settings.title": "Qoduck"'), '标题应为 Qoduck')
-  assert.ok(source.includes('"settings.intro": "Qoder 的 Qoduck 桌宠复刻"'), '中文描述应统一')
+  // 页面介绍段（settings.intro）是这一页自己的说明，和插件元数据描述不是一回事，
+  // 所以只要求它存在且非空，不要求与下面三处元数据逐字相同。
+  assert.ok(/"settings\.intro": "(.+)"/.test(source), '页面介绍段应存在且非空')
   const zh = JSON.parse(readFileSync(join(ROOT, 'locale', 'zh.json'), 'utf8'))
   const en = JSON.parse(readFileSync(join(ROOT, 'locale', 'en.json'), 'utf8'))
   assert.equal(zh.meta.title, 'Qoduck', 'locale zh 标题应为 Qoduck')
   assert.equal(zh.meta.description, 'Qoder 的 Qoduck 桌宠复刻', 'locale zh 描述应统一')
   assert.equal(en.meta.title, 'Qoduck', 'locale en 标题应为 Qoduck')
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-  assert.equal(pkg.description, 'Qoder 的 Qoduck 桌宠复刻', 'package.json 描述应统一')
+  assert.equal(pkg.description, zh.meta.description, 'package.json 描述应与 locale zh 一致')
 })
 
-test('设置页标题字号对齐 DSH 原生', () => {
+test('设置页介绍段字号对齐 DSH 原生', () => {
   const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
-  const title = source.match(/\.qoduck-head-title\{[^}]*\}/)
-  assert.ok(title, '找不到 .qoduck-head-title 样式')
-  // 原生设置页内容区标题是 16px / 500 / 行高 24px（见 ui-settings-general 的 title 类）
-  assert.ok(/font-size:16px/.test(title[0]), '标题应为 16px（原生一致），实际：' + title[0])
-  assert.ok(/font-weight:500/.test(title[0]), '标题字重应为 500（原生一致）')
-  assert.ok(/line-height:24px/.test(title[0]), '标题行高应为 24px（原生一致）')
-  const desc = source.match(/\.qoduck-head-desc\{[^}]*\}/)
-  assert.ok(desc, '找不到 .qoduck-head-desc 样式')
-  // 原生 description 是 14px / 行高 24px
-  assert.ok(/font-size:14px/.test(desc[0]), '描述应为 14px（原生一致），实际：' + desc[0])
+  // 页首不再自己画标题：原生设置菜单已经渲染了页面标题（Qoduck），
+  // 插件这一侧只补一段介绍，重复画标题是之前两版都栽过的坑。
+  assert.ok(!source.includes('qoduck-head-title'), '页首不应再重复渲染标题')
+  const intro = source.match(/\.qoduck-intro\{[^}]*\}/)
+  assert.ok(intro, '找不到 .qoduck-intro 样式')
+  // 原生 models 页的 `.intro` 是 14px / 行高 22px
+  assert.ok(/font-size:14px/.test(intro[0]), '介绍段应为 14px（原生一致），实际：' + intro[0])
+  assert.ok(/line-height:22px/.test(intro[0]), '介绍段行高应为 22px（原生一致），实际：' + intro[0])
+})
+
+test('运行组底部内边距与其它组一致', () => {
+  const source = readFileSync(join(ROOT, 'lib', 'client.js'), 'utf8')
+  const row = source.match(/\.qoduck-stat-row\{[^}]*\}/)
+  assert.ok(row, '找不到 .qoduck-stat-row 样式')
+  // 运行组里没有设置行，组卡片底部完全由这个 padding 撑开。给 4px 时两张状态卡
+  // 贴着卡片下边，看着像被切了一刀（回归）；16px 与 `.qoduck-row` 的底部对齐。
+  assert.ok(/padding:0 16px 16px/.test(row[0]), '运行组底部内边距应为 16px，实际：' + row[0])
 })
 
 test('locale 字典 zh / en 键集一致且非空', () => {

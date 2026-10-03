@@ -629,14 +629,19 @@ $script:NotifySoundPath = Join-Path $PluginDir (Join-Path 'assets' 'notify.mp3')
 # MediaPlayer 支持 mp3（SoundPlayer 只吃 wav）。复用同一个实例：每次 new 会累积
 # 对象且不释放文件句柄，播完停在 Close() 上等下一次 Open()。
 $script:NotifyPlayer = $null
+# 提示音总开关。宿主每 ~130ms 把 config.json 里的 sound 随相位一起写进 state.json，
+# 由 Apply-Config 落到这个变量上；没拿到就保持 false（此前桌宠从不发声）。
+$script:SoundEnabled = $false
 
 function Play-NotifySound {
+    if (-not $script:SoundEnabled) { return }
     if (-not $script:NotifySoundPath -or -not (Test-Path -LiteralPath $script:NotifySoundPath)) { return }
     try {
         if (-not $script:NotifyPlayer) { $script:NotifyPlayer = New-Object System.Windows.Media.MediaPlayer }
         $script:NotifyPlayer.Stop()
         $script:NotifyPlayer.Close()
         $script:NotifyPlayer.Open([Uri]$script:NotifySoundPath)
+        # Play() 自己起解码线程，不阻塞 16ms 的动画定时器。
         $script:NotifyPlayer.Play()
     } catch {
         # 缺 Windows Media 组件（如 N/KN 版）或文件损坏都不该打断卡片刷新
@@ -843,7 +848,14 @@ $window.Title = 'Qoduck'
 $window.WindowStyle = 'None'
 $window.AllowsTransparency = $true
 $window.Background = [System.Windows.Media.Brushes]::Transparent
-$window.Topmost = $true
+# 桌宠**故意不置顶**：它待在普通窗口层，被浏览器 / DSH 这类后开的窗口盖住。
+# 置顶会压在全屏应用之上（全屏视频、游戏），那是干扰，不是桌宠该做的事。
+#
+# 想让它只比壁纸高一层（"桌面层"），只能靠 SetParent 挂到 Progman / WorkerW。
+# 本机不成立：跨进程 SetParent 对 WPF 分层窗口是空操作 —— 调用返回非 NULL，
+# 窗口却拿不到 WS_CHILD、GetParent 仍是 0，位置与层级都没变（实测）。所以维持
+# 普通非置顶窗口：看不见它的时候，是它被别的窗口盖住了。
+$window.Topmost = $false
 $window.ShowInTaskbar = $false
 $window.ResizeMode = 'NoResize'
 $window.WindowStartupLocation = 'Manual'
@@ -1166,6 +1178,7 @@ function Apply-Config($state) {
         }
     }
     if ($null -ne $state.phase) { $script:Phase = [string]$state.phase }
+    if ($null -ne $state.sound) { $script:SoundEnabled = [bool]$state.sound }
     if ($null -ne $state.pin -and -not $script:Dragging) {
         $pin = [string]$state.pin
         if ($state.reset -eq $true) {
@@ -1228,6 +1241,11 @@ $root.Add_MouseLeftButtonDown({
     $script:Dragging = $true
     $script:DragMoved = $false
     $c = Get-CursorDip
+    # 拖拽用**增量法**：只记光标起点与窗口当前 Left/Top，之后每一帧写
+    # `Left = 起点Left + (当前光标 − 起点光标)`。
+    #
+    # 不做「屏幕坐标 − 窗口原点」的换算：窗口是普通顶层窗口，Left/Top 与屏幕
+    # 坐标本来就同基准，增量法在这个前提下完全等价，还少一个可能算错的环节。
     $script:DragOrigin = @{ x = $c.x; y = $c.y; left = $window.Left; top = $window.Top }
     $root.CaptureMouse() | Out-Null
 })
@@ -1573,10 +1591,12 @@ $window.Add_Closed({
 })
 
 $window.Show()
-# 只设 Topmost 不够：窗口在其它已存在的顶层窗口之后创建时，未必被放进 topmost 带。
-# 关掉再打开一次是强制重排 z 序的标准做法，且不会抢焦点。
-$window.Topmost = $false
-$window.Topmost = $true
+
+# 这里曾经把窗口挂到桌面层（Progman / WorkerW），想让全屏应用盖住它。
+# 本机实测不成立：跨进程 SetParent 对 WPF 分层窗口无效（返回非 NULL，但窗口
+# 拿不到 WS_CHILD、GetParent 仍为 0），挂载是空操作。而"不干扰其他窗口"这个
+# 目标，普通非置顶窗口已经满足，所以不再折腾 z 序 —— 也不做 Topmost 的重排。
+
 # 打开时先挥个手打招呼（Qoder 原版开窗也有一段问候动作）。
 Start-OneShot 'waving'
 $timer.Start()
