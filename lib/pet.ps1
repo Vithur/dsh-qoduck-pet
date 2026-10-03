@@ -630,8 +630,8 @@ $script:NotifySoundPath = Join-Path $PluginDir (Join-Path 'assets' 'notify.mp3')
 # 对象且不释放文件句柄，播完停在 Close() 上等下一次 Open()。
 $script:NotifyPlayer = $null
 # 提示音总开关。宿主每 ~130ms 把 config.json 里的 sound 随相位一起写进 state.json，
-# 由 Apply-Config 落到这个变量上；没拿到就保持 false（此前桌宠从不发声）。
-$script:SoundEnabled = $false
+# 由 Apply-Config 落到这个变量上；这里与宿主默认值一致（默认开），宿主写入后以它为准。
+$script:SoundEnabled = $true
 
 function Play-NotifySound {
     if (-not $script:SoundEnabled) { return }
