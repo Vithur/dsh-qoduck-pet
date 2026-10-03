@@ -629,12 +629,8 @@ $script:NotifySoundPath = Join-Path $PluginDir (Join-Path 'assets' 'notify.mp3')
 # MediaPlayer 支持 mp3（SoundPlayer 只吃 wav）。复用同一个实例：每次 new 会累积
 # 对象且不释放文件句柄，播完停在 Close() 上等下一次 Open()。
 $script:NotifyPlayer = $null
-# 提示音总开关。宿主每 ~130ms 把 config.json 里的 sound 随相位一起写进 state.json，
-# 由 Apply-Config 落到这个变量上；没拿到就保持 false（此前桌宠从不发声）。
-$script:SoundEnabled = $false
 
 function Play-NotifySound {
-    if (-not $script:SoundEnabled) { return }
     if (-not $script:NotifySoundPath -or -not (Test-Path -LiteralPath $script:NotifySoundPath)) { return }
     try {
         if (-not $script:NotifyPlayer) { $script:NotifyPlayer = New-Object System.Windows.Media.MediaPlayer }
@@ -1178,7 +1174,6 @@ function Apply-Config($state) {
         }
     }
     if ($null -ne $state.phase) { $script:Phase = [string]$state.phase }
-    if ($null -ne $state.sound) { $script:SoundEnabled = [bool]$state.sound }
     if ($null -ne $state.pin -and -not $script:Dragging) {
         $pin = [string]$state.pin
         if ($state.reset -eq $true) {
