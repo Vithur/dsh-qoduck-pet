@@ -659,6 +659,30 @@ test('ActivityBoard：工具调用与回合结束驱动状态', () => {
   assert.equal(snap.items[0].canStop, false)
 })
 
+test('ActivityBoard：主条目已结算但子会话在忙时回到 running（完成音只该响在真正收工时）', () => {
+  const board = new activity.ActivityBoard()
+  board.touch('main', { id: 'main', header: {} })
+  board.touch('child', { id: 'child', header: { parentSession: 'main', origin: 'subagent' } })
+
+  // 主会话收完一轮：turn/end completed
+  board.noteEvent('main', { type: 'turn/end', data: { reason: { kind: 'completed' } } })
+  board.setRunning('main', false)
+  assert.equal(board.snapshot().items[0].status, 'completed', '没有子会话在忙时保持 completed')
+
+  // 子会话开始跑：主条目必须从 completed 回到 running，否则窗口每轮播完成音
+  board.setRunning('child', true)
+  board.noteEvent('child', { type: 'tool/call', data: { name: 'grep', arguments: '{"pattern":"x"}' } })
+  const busy = board.snapshot()
+  assert.equal(busy.items[0].status, 'running', '子会话在忙时主条目应为 running')
+  assert.equal(busy.items[0].childCount, 1)
+  assert.equal(busy.items[0].canStop, true)
+
+  // 子会话收工后回到 completed，随后自然过期
+  board.noteEvent('child', { type: 'turn/end', data: { reason: { kind: 'completed' } } })
+  board.setRunning('child', false)
+  assert.equal(board.snapshot().items[0].status, 'completed', '子会话收工后主条目恢复 completed')
+})
+
 test('ActivityBoard：等待审批显示 waiting，决定后回落', () => {
   const board = new activity.ActivityBoard()
   board.touch('s2', null)
