@@ -677,10 +677,13 @@ test('ActivityBoard：主条目已结算但子会话在忙时回到 running（�
   assert.equal(busy.items[0].childCount, 1)
   assert.equal(busy.items[0].canStop, true)
 
-  // 子会话收工后回到 completed，随后自然过期
+  // 子会话收工后回到 completed（过了子会话静默窗口才真正恢复）
   board.noteEvent('child', { type: 'turn/end', data: { reason: { kind: 'completed' } } })
   board.setRunning('child', false)
-  assert.equal(board.snapshot().items[0].status, 'completed', '子会话收工后主条目恢复 completed')
+  const afterChild = board.snapshot()
+  assert.equal(afterChild.items[0].status, 'running', '子会话刚收工时仍在静默窗口内，保持 running 不闪完成音')
+  const later = Date.now() + 120_000
+  assert.equal(board.snapshot(later).items[0].status, 'completed', '静默窗口过后恢复 completed')
 })
 
 test('ActivityBoard：等待审批显示 waiting，决定后回落', () => {
